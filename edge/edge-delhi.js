@@ -9,9 +9,19 @@ const ORIGIN_URL = "http://localhost:3000";
 const cache = new Map();
 
 const CACHE_TTL = 30 * 1000;
+const MAX_CACHE_SIZE = 5;
 
+const stats = {
+    requests: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    cacheEvictions: 0
+};
 
-// Health check
+app.get("/", (req, res) => {
+    res.send("Delhi Edge server is working!");
+});
+
 app.get("/health", (req, res) => {
     res.json({
         status: "ok",
@@ -19,42 +29,37 @@ app.get("/health", (req, res) => {
     });
 });
 
-app.delete("/cache/:filename", (req, res) => {
-
-    const filename = req.params.filename;
-
-    if (cache.has(filename)) {
-
-        cache.delete(filename);
-
-        console.log(`CACHE INVALIDATED: ${filename}`);
-
-        return res.send(`Cache deleted for ${filename}`);
-    }
-
-    console.log(`No cache found for: ${filename}`);
-
-    res.send(`No cache found for ${filename}`);
+app.get("/stats", (req, res) => {
+    res.json({
+        server: "delhi",
+        requests: stats.requests,
+        cacheHits: stats.cacheHits,
+        cacheMisses: stats.cacheMisses,
+        cacheEvictions: stats.cacheEvictions,
+        cachedFiles: cache.size
+    });
 });
 
-
-// File request
 app.get("/files/:filename", async (req, res) => {
+
+    stats.requests++;
 
     const filename = req.params.filename;
 
     console.log(`Request received for: ${filename}`);
 
-
-    // Check cache
     if (cache.has(filename)) {
 
         const cachedFile = cache.get(filename);
 
-        // Check TTL
         if (Date.now() < cachedFile.expiresAt) {
 
+            stats.cacheHits++;
+
             console.log(`CACHE HIT: ${filename}`);
+
+            cache.delete(filename);
+            cache.set(filename, cachedFile);
 
             return res.send(cachedFile.data);
 
@@ -66,8 +71,8 @@ app.get("/files/:filename", async (req, res) => {
         }
     }
 
+    stats.cacheMisses++;
 
-    // Cache miss
     console.log(`CACHE MISS: ${filename}`);
 
     try {
@@ -78,13 +83,23 @@ app.get("/files/:filename", async (req, res) => {
 
         const file = response.data;
 
+        if (cache.size >= MAX_CACHE_SIZE) {
 
-        // Store file with TTL
+            const oldestFilename = cache.keys().next().value;
+
+            stats.cacheEvictions++;
+
+            console.log(
+                `LRU EVICTION: Removing ${oldestFilename}`
+            );
+
+            cache.delete(oldestFilename);
+        }
+
         cache.set(filename, {
             data: file,
             expiresAt: Date.now() + CACHE_TTL
         });
-
 
         console.log(`Stored ${filename} in cache`);
 
@@ -98,11 +113,32 @@ app.get("/files/:filename", async (req, res) => {
     }
 });
 
+app.delete("/cache/:filename", (req, res) => {
+
+    const filename = req.params.filename;
+
+    if (cache.has(filename)) {
+
+        cache.delete(filename);
+
+        console.log(`CACHE INVALIDATED: ${filename}`);
+
+        return res.send(
+            `Cache deleted for ${filename}`
+        );
+    }
+
+    console.log(`No cache found for: ${filename}`);
+
+    res.send(
+        `No cache found for ${filename}`
+    );
+});
 
 app.listen(PORT, () => {
 
     console.log(
-        `Edge server running on http://localhost:${PORT}`
+        `Delhi Edge server running on http://localhost:${PORT}`
     );
 
 });

@@ -1,0 +1,152 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0f1117;
+    color: #f8fafc;
+}
+
+.dashboard {
+    min-height: 100vh;
+    padding: 30px 40px;
+}
+
+/* =========================
+   Header
+========================= */
+
+.dashboard h1 {
+    text-align: center;
+    margin: 0 0 30px;
+    font-size: 32px;
+    color: #f8fafc;
+}
+
+.dashboard h2 {
+    margin: 0 0 18px;
+    color: #f8fafc;
+    font-size: 22px;
+}
+
+
+/* =========================
+   Summary Cards
+========================= */
+
+.summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+.card {
+    background: #171a21;
+    border: 1px solid #282d36;
+    border-radius: 10px;
+    padding: 20px;
+    min-height: 110px;
+
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+}
+
+.card h3 {
+    margin: 0 0 14px;
+    color: #cbd5e1;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.card p {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+
+/* =========================
+   Chart Cards
+========================= */
+
+.chart-card {
+    background: #171a21;
+    border: 1px solid #282d36;
+    border-radius: 10px;
+
+    padding: 20px 24px;
+
+    margin-bottom: 25px;
+
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+}
+
+.chart-card h2 {
+    margin: 0 0 20px;
+    font-size: 20px;
+    color: #f8fafc;
+}
+
+
+/* =========================
+   Edge Servers
+========================= */
+
+.edges {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+}
+
+.edge-card {
+    background: #171a21;
+    border: 1px solid #282d36;
+    border-radius: 10px;
+
+    padding: 22px;
+
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+}
+
+.edge-card h3 {
+    margin: 0 0 18px;
+    color: #f8fafc;
+    font-size: 20px;
+}
+
+.edge-card p {
+    margin: 10px 0;
+    color: #cbd5e1;
+    font-size: 14px;
+}
+
+
+/* =========================
+   Responsive
+========================= */
+
+@media (max-width: 1100px) {
+
+    .summary {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .edges {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+@media (max-width: 700px) {
+
+    .dashboard {
+        padding: 20px;
+    }
+
+    .summary {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,7 +1,10 @@
 const express = require("express");
 const axios = require("axios");
+const cors = require("cors");
 
 const app = express();
+
+app.use(cors());
 
 const PORT = 7000;
 
@@ -11,12 +14,15 @@ const EDGE_SERVERS = {
     london: "http://localhost:6000"
 };
 
-
-// Stores health + latency information
 const edgeStatus = {};
 
+const history = [];
+const MAX_HISTORY = 60;
 
-// Update Edge server health and latency
+
+// ==========================================
+// Check Edge Health + Latency
+// ==========================================
 
 async function updateEdgeStatus() {
 
@@ -57,23 +63,21 @@ async function updateEdgeStatus() {
 }
 
 
-// Get all healthy Edges sorted by latency
+// ==========================================
+// Get Healthy Edges
+// ==========================================
 
 function getHealthyEdges() {
 
     const healthyEdges = [];
 
-
     for (const name in edgeStatus) {
 
         const status = edgeStatus[name];
 
-
-        // Ignore unhealthy Edge
         if (status.healthy === false) {
             continue;
         }
-
 
         healthyEdges.push({
             name: name,
@@ -82,17 +86,116 @@ function getHealthyEdges() {
         });
     }
 
-
-    // Fastest Edge first
     healthyEdges.sort((a, b) => {
         return a.latency - b.latency;
     });
 
-
     return healthyEdges;
 }
 
-// Router home
+
+// ==========================================
+// Collect Metrics History
+// ==========================================
+
+async function collectStatsHistory() {
+
+    let totalRequests = 0;
+    let totalCacheHits = 0;
+    let totalCacheMisses = 0;
+    let totalCacheEvictions = 0;
+
+    // Get stats from every Edge
+
+    for (const name in EDGE_SERVERS) {
+
+        try {
+
+            const response = await axios.get(
+                `${EDGE_SERVERS[name]}/stats`
+            );
+
+            const stats = response.data;
+
+            totalRequests += stats.requests;
+            totalCacheHits += stats.cacheHits;
+            totalCacheMisses += stats.cacheMisses;
+            totalCacheEvictions += stats.cacheEvictions;
+
+        } catch (error) {
+
+            console.log(
+                `Could not collect stats from ${name}`
+            );
+        }
+    }
+
+
+    // Calculate Cache Hit Rate
+
+    const cacheHitRate =
+        totalRequests > 0
+            ? (totalCacheHits / totalRequests) * 100
+            : 0;
+
+
+    // Create history snapshot
+
+    const snapshot = {
+
+        time: new Date().toLocaleTimeString(),
+
+        requests: totalRequests,
+
+        cacheHits: totalCacheHits,
+
+        cacheMisses: totalCacheMisses,
+
+        cacheEvictions: totalCacheEvictions,
+
+        cacheHitRate: Number(
+            cacheHitRate.toFixed(2)
+        ),
+
+        edgeLatency: {
+
+            delhi: edgeStatus.delhi?.healthy
+                ? edgeStatus.delhi.latency
+                : null,
+
+            pune: edgeStatus.pune?.healthy
+                ? edgeStatus.pune.latency
+                : null,
+
+            london: edgeStatus.london?.healthy
+                ? edgeStatus.london.latency
+                : null
+
+        }
+
+    };
+
+
+    // Store snapshot
+
+    history.push(snapshot);
+
+
+    // Keep maximum 60 snapshots
+
+    if (history.length > MAX_HISTORY) {
+
+        history.shift();
+
+    }
+
+    console.log("History snapshot collected");
+}
+
+
+// ==========================================
+// Home
+// ==========================================
 
 app.get("/", (req, res) => {
 
@@ -101,13 +204,17 @@ app.get("/", (req, res) => {
 });
 
 
-// File request + Edge failover
+// ==========================================
+// File Request
+// ==========================================
 
 app.get("/files/:filename", async (req, res) => {
 
     const filename = req.params.filename;
 
-    console.log(`\nRequest received for: ${filename}`);
+    console.log(
+        `\nRequest received for: ${filename}`
+    );
 
 
     const healthyEdges = getHealthyEdges();
@@ -118,16 +225,17 @@ app.get("/files/:filename", async (req, res) => {
         return res
             .status(503)
             .send("No Edge server available");
+
     }
 
 
-    // Try Edges from fastest to slowest
+    // Try Edges in latency order
+
     for (const edge of healthyEdges) {
 
         console.log(
             `Trying ${edge.name} (${edge.latency} ms)`
         );
-
 
         try {
 
@@ -148,82 +256,269 @@ app.get("/files/:filename", async (req, res) => {
             console.log(
                 `${edge.name} failed. Trying next Edge...`
             );
+
         }
+
     }
 
 
-    // Every Edge failed
     res
         .status(503)
         .send("All Edge servers failed");
+
 });
 
-// Centralized cache invalidation
 
-app.delete("/invalidate/:filename", async (req, res) => {
+// ==========================================
+// Cache Invalidation
+// ==========================================
 
-    const filename = req.params.filename;
+app.delete(
+    "/invalidate/:filename",
+    async (req, res) => {
 
-    console.log(`\nInvalidating cache for: ${filename}`);
+        const filename = req.params.filename;
 
+        console.log(
+            `\nInvalidating cache for: ${filename}`
+        );
+
+
+        const results = {};
+
+
+        for (const name in EDGE_SERVERS) {
+
+            const edgeUrl = EDGE_SERVERS[name];
+
+
+            try {
+
+                const response = await axios.delete(
+                    `${edgeUrl}/cache/${filename}`
+                );
+
+
+                results[name] = {
+
+                    success: true,
+
+                    message: response.data
+
+                };
+
+
+                console.log(
+                    `Invalidated ${filename} on ${name}`
+                );
+
+
+            } catch (error) {
+
+                results[name] = {
+
+                    success: false,
+
+                    message:
+                        "Edge server unavailable"
+
+                };
+
+
+                console.log(
+                    `Could not invalidate ${filename} on ${name}`
+                );
+
+            }
+
+        }
+
+
+        res.json({
+
+            filename: filename,
+
+            results: results
+
+        });
+
+    }
+);
+
+
+// ==========================================
+// Current Stats
+// ==========================================
+
+app.get("/stats", async (req, res) => {
 
     const results = {};
 
 
+    // Get stats from every Edge
+
     for (const name in EDGE_SERVERS) {
-
-        const edgeUrl = EDGE_SERVERS[name];
-
 
         try {
 
-            const response = await axios.delete(
-                `${edgeUrl}/cache/${filename}`
+            const response = await axios.get(
+                `${EDGE_SERVERS[name]}/stats`
             );
 
 
             results[name] = {
-                success: true,
-                message: response.data
+
+                ...response.data,
+
+                healthy:
+                    edgeStatus[name]?.healthy ?? false,
+
+                latency:
+                    edgeStatus[name]?.latency ?? null
+
             };
 
-
-            console.log(
-                `Invalidated ${filename} on ${name}`
-            );
 
         } catch (error) {
 
             results[name] = {
-                success: false,
-                message: "Edge server unavailable"
+
+                server: name,
+
+                available: false,
+
+                healthy: false,
+
+                latency: null,
+
+                message:
+                    "Edge server unavailable"
+
             };
 
-
-            console.log(
-                `Could not invalidate ${filename} on ${name}`
-            );
         }
+
+    }
+
+
+    // Total metrics
+
+    let totalRequests = 0;
+
+    let totalCacheHits = 0;
+
+    let totalCacheMisses = 0;
+
+    let totalCacheEvictions = 0;
+
+    let totalCachedFiles = 0;
+
+
+    for (const name in results) {
+
+        const stats = results[name];
+
+
+        if (stats.available === false) {
+            continue;
+        }
+
+
+        totalRequests += stats.requests;
+
+        totalCacheHits += stats.cacheHits;
+
+        totalCacheMisses += stats.cacheMisses;
+
+        totalCacheEvictions +=
+            stats.cacheEvictions;
+
+        totalCachedFiles +=
+            stats.cachedFiles;
+
+    }
+
+
+    // Calculate hit rate
+
+    let cacheHitRate = 0;
+
+
+    if (totalRequests > 0) {
+
+        cacheHitRate =
+            (totalCacheHits /
+                totalRequests) * 100;
+
     }
 
 
     res.json({
-        filename: filename,
-        results: results
+
+        total: {
+
+            requests:
+                totalRequests,
+
+            cacheHits:
+                totalCacheHits,
+
+            cacheMisses:
+                totalCacheMisses,
+
+            cacheEvictions:
+                totalCacheEvictions,
+
+            cachedFiles:
+                totalCachedFiles,
+
+            cacheHitRate:
+                `${cacheHitRate.toFixed(2)}%`
+
+        },
+
+
+        edges: results
+
     });
+
 });
 
 
-// Start health monitoring
+// ==========================================
+// History
+// ==========================================
+
+app.get("/history", (req, res) => {
+
+    res.json(history);
+
+});
+
+
+// ==========================================
+// Start Background Monitoring
+// ==========================================
 
 updateEdgeStatus();
 
+setInterval(
+    updateEdgeStatus,
+    10000
+);
 
-// Check Edge health every 10 seconds
-setInterval(updateEdgeStatus, 10000);
 
+collectStatsHistory();
+
+setInterval(
+    collectStatsHistory,
+    5000
+);
+
+
+// ==========================================
 // Start Router
-
+// ==========================================
 
 app.listen(PORT, () => {
 
