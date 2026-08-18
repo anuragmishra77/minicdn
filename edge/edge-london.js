@@ -3,8 +3,8 @@ const axios = require("axios");
 
 const app = express();
 
-const PORT = 6000;
-const ORIGIN_URL = "http://localhost:3000";
+const PORT = Number(process.env.PORT) || 6000;
+const ORIGIN_URL = process.env.ORIGIN_URL || "http://localhost:3000";
 
 const cache = new Map();
 
@@ -23,10 +23,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-    res.json({
-        status: "ok",
-        server: "london"
-    });
+    res.json({ status: "ok", server: "london" });
 });
 
 app.get("/stats", (req, res) => {
@@ -41,58 +38,39 @@ app.get("/stats", (req, res) => {
 });
 
 app.get("/files/:filename", async (req, res) => {
-
     stats.requests++;
-
     const filename = req.params.filename;
 
     console.log(`Request received for: ${filename}`);
 
     if (cache.has(filename)) {
-
         const cachedFile = cache.get(filename);
 
         if (Date.now() < cachedFile.expiresAt) {
-
             stats.cacheHits++;
-
             console.log(`CACHE HIT: ${filename}`);
 
             cache.delete(filename);
             cache.set(filename, cachedFile);
 
             return res.send(cachedFile.data);
-
-        } else {
-
-            console.log(`CACHE EXPIRED: ${filename}`);
-
-            cache.delete(filename);
         }
+
+        console.log(`CACHE EXPIRED: ${filename}`);
+        cache.delete(filename);
     }
 
     stats.cacheMisses++;
-
     console.log(`CACHE MISS: ${filename}`);
 
     try {
-
-        const response = await axios.get(
-            `${ORIGIN_URL}/files/${filename}`
-        );
-
+        const response = await axios.get(`${ORIGIN_URL}/files/${filename}`);
         const file = response.data;
 
         if (cache.size >= MAX_CACHE_SIZE) {
-
             const oldestFilename = cache.keys().next().value;
-
             stats.cacheEvictions++;
-
-            console.log(
-                `LRU EVICTION: Removing ${oldestFilename}`
-            );
-
+            console.log(`LRU EVICTION: Removing ${oldestFilename}`);
             cache.delete(oldestFilename);
         }
 
@@ -102,43 +80,26 @@ app.get("/files/:filename", async (req, res) => {
         });
 
         console.log(`Stored ${filename} in cache`);
-
         res.send(file);
-
     } catch (error) {
-
         console.log("Could not fetch file from Origin");
-
         res.status(404).send("File not found");
     }
 });
 
 app.delete("/cache/:filename", (req, res) => {
-
     const filename = req.params.filename;
 
     if (cache.has(filename)) {
-
         cache.delete(filename);
-
         console.log(`CACHE INVALIDATED: ${filename}`);
-
-        return res.send(
-            `Cache deleted for ${filename}`
-        );
+        return res.send(`Cache deleted for ${filename}`);
     }
 
     console.log(`No cache found for: ${filename}`);
-
-    res.send(
-        `No cache found for ${filename}`
-    );
+    res.send(`No cache found for ${filename}`);
 });
 
 app.listen(PORT, () => {
-
-    console.log(
-        `London Edge server running on http://localhost:${PORT}`
-    );
-
+    console.log(`London Edge server running on port ${PORT}`);
 });
