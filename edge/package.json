@@ -1,10 +1,13 @@
 {
   "name": "edge",
   "version": "1.0.0",
-  "description": "",
-  "main": "edgeserver.js",
+  "description": "Mini CDN edge and router services",
+  "main": "router.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node router.js",
+    "start:delhi": "node edge-delhi.js",
+    "start:pune": "node edge-pune.js",
+    "start:london": "node edge-london.js"
   },
   "keywords": [],
   "author": "",
